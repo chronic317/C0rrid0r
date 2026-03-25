@@ -1,0 +1,864 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="referrer" content="no-referrer">
+<title>C0RRID0R — Missing Persons Alert System</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/hls.js/1.4.10/hls.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;700&family=Bebas+Neue&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{--bg:#07080a;--bg2:#0d0f14;--bg3:#13161d;--border:#1e2330;--amber:#f5a623;--blue:#4a9eff;--silver:#a8b4c0;--green:#2dcc70;--text:#c8d0dc;--dim:#4a5568;--bright:#eef2f8;--red:#e03e3e}
+body{background:var(--bg);color:var(--text);font-family:'IBM Plex Sans',sans-serif;height:100vh;display:flex;flex-direction:column;overflow:hidden}
+.header{display:flex;align-items:center;justify-content:space-between;padding:0 20px;height:52px;background:var(--bg2);border-bottom:1px solid var(--border);flex-shrink:0}
+.logo{font-family:'Bebas Neue',sans-serif;font-size:26px;letter-spacing:5px;color:var(--amber)}
+.logo-sub{font-family:'IBM Plex Mono',monospace;font-size:9px;letter-spacing:2px;color:var(--dim);margin-left:12px;vertical-align:middle}
+.stat-pills{display:flex;gap:8px}
+.stat-pill{display:flex;align-items:center;gap:6px;background:var(--bg3);border:1px solid var(--border);padding:4px 10px;font-family:'IBM Plex Mono',monospace;font-size:9px}
+.dot{width:6px;height:6px;border-radius:50%;flex-shrink:0}
+.d-amber{background:var(--amber);animation:pa 2s infinite}
+.d-silver{background:var(--silver)}
+.d-green{background:var(--green);animation:pg 2s infinite}
+.d-blue{background:var(--blue)}
+@keyframes pa{0%,100%{opacity:1;box-shadow:0 0 5px var(--amber)}50%{opacity:.4;box-shadow:none}}
+@keyframes pg{0%,100%{opacity:1;box-shadow:0 0 5px var(--green)}50%{opacity:.5;box-shadow:none}}
+.hdr-right{display:flex;align-items:center;gap:16px;font-family:'IBM Plex Mono',monospace;font-size:9px;color:var(--dim)}
+.live-badge{display:flex;align-items:center;gap:5px;color:var(--green);font-weight:700}
+.main{display:flex;flex:1;overflow:hidden}
+.panel-left{width:265px;flex-shrink:0;background:var(--bg2);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden}
+.panel-hdr{padding:9px 13px;border-bottom:1px solid var(--border);font-family:'IBM Plex Mono',monospace;font-size:9px;letter-spacing:2px;color:var(--dim);text-transform:uppercase;display:flex;justify-content:space-between;align-items:center;flex-shrink:0}
+.filter-bar{display:flex;border-bottom:1px solid var(--border);flex-shrink:0}
+.ftab{flex:1;padding:7px 4px;font-family:'IBM Plex Mono',monospace;font-size:9px;letter-spacing:1px;text-align:center;cursor:pointer;color:var(--dim);border-bottom:2px solid transparent;transition:all .15s;text-transform:uppercase}
+.ftab:hover{color:var(--text)}
+.ftab.on{color:var(--amber);border-bottom-color:var(--amber)}
+.nation-strip{margin:7px;padding:7px 9px;background:rgba(245,166,35,.04);border:1px solid rgba(245,166,35,.18);border-left:3px solid var(--amber);font-size:9px;color:var(--dim);flex-shrink:0}
+.nation-strip strong{color:var(--amber);font-family:'IBM Plex Mono',monospace}
+.alerts-scroll{flex:1;overflow-y:auto;padding:5px}
+.alerts-scroll::-webkit-scrollbar{width:2px}
+.alerts-scroll::-webkit-scrollbar-thumb{background:var(--border)}
+.acard{background:var(--bg3);border:1px solid var(--border);border-left:3px solid var(--amber);padding:8px 10px;margin-bottom:4px;cursor:pointer;transition:all .15s}
+.acard:hover{background:#151820}
+.acard.active{background:#181b12;border-color:var(--amber);box-shadow:0 0 12px rgba(245,166,35,.1)}
+.acard.silver{border-left-color:var(--silver)}.acard.silver.active{background:#141618}
+.acard.green{border-left-color:var(--green)}.acard.green.active{background:#111814}
+.acard.blue{border-left-color:var(--blue)}.acard.blue.active{background:#101520}
+.abadge{font-family:'IBM Plex Mono',monospace;font-size:8px;font-weight:700;letter-spacing:2px;padding:1px 5px;display:inline-block;margin-bottom:4px}
+.ab-amber{background:rgba(245,166,35,.12);color:var(--amber)}
+.ab-silver{background:rgba(168,180,192,.12);color:var(--silver)}
+.ab-green{background:rgba(45,204,112,.12);color:var(--green)}
+.ab-blue{background:rgba(74,158,255,.12);color:var(--blue)}
+.aname{font-size:12px;font-weight:600;color:var(--bright);margin-bottom:2px}
+.avehicle{font-family:'IBM Plex Mono',monospace;font-size:9px;color:var(--text);margin-bottom:2px}
+.aplate{font-family:'IBM Plex Mono',monospace;font-size:10px;font-weight:700;color:var(--amber);letter-spacing:2px}
+.aplate.silver{color:var(--silver)}.aplate.green{color:var(--green)}.aplate.blue{color:var(--blue)}
+.ameta{display:flex;justify-content:space-between;margin-top:4px;font-family:'IBM Plex Mono',monospace;font-size:8px;color:var(--dim)}
+.no-alerts{padding:20px 10px;text-align:center;font-family:'IBM Plex Mono',monospace;font-size:9px;color:var(--dim);line-height:1.8}
+.no-alerts span{color:var(--green)}
+.real-badge{display:inline-block;font-family:'IBM Plex Mono',monospace;font-size:7px;padding:1px 4px;background:rgba(45,204,112,.15);color:var(--green);border:1px solid rgba(45,204,112,.3);margin-left:4px}
+.panel-map{flex:1;position:relative;overflow:hidden}
+#map{width:100%;height:100%}
+.leaflet-tile{filter:brightness(.5) saturate(.3) hue-rotate(195deg)}
+.leaflet-control-zoom a{background:var(--bg2)!important;color:var(--text)!important;border-color:var(--border)!important}
+.cam-dot{width:8px;height:8px;background:var(--green);border:1px solid var(--bg);border-radius:50%;cursor:pointer;transition:all .15s}
+.cam-dot:hover,.cam-dot.sel{background:var(--amber);transform:scale(1.8);box-shadow:0 0 7px var(--amber)}
+.alert-pin{width:11px;height:11px;border-radius:50%;border:2px solid var(--bg);cursor:pointer}
+.map-legend{position:absolute;bottom:12px;left:12px;background:rgba(13,15,20,.92);border:1px solid var(--border);padding:9px 12px;font-family:'IBM Plex Mono',monospace;font-size:8px;color:var(--dim);z-index:1000;pointer-events:none}
+.leg-row{display:flex;align-items:center;gap:7px;margin-bottom:3px}
+.leg-row:last-child{margin-bottom:0}
+.leg-dot{width:7px;height:7px;border-radius:50%;display:inline-block;flex-shrink:0}
+.panel-right{width:300px;flex-shrink:0;background:var(--bg2);border-left:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden}
+.cam-viewport{flex-shrink:0;background:#000;aspect-ratio:16/9;position:relative;overflow:hidden}
+.cam-viewport img{width:100%;height:100%;object-fit:cover;display:none}
+.cam-placeholder{width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;font-family:'IBM Plex Mono',monospace;font-size:9px;color:var(--dim)}
+.cam-overlay{position:absolute;top:7px;left:7px;right:7px;display:flex;justify-content:space-between;pointer-events:none}
+.cam-tag{font-family:'IBM Plex Mono',monospace;font-size:8px;background:rgba(7,8,10,.85);padding:2px 6px}
+.cam-live{color:var(--green);display:none}
+.cam-ts{color:var(--dim)}
+.cam-meta{padding:9px 13px;border-bottom:1px solid var(--border);display:none;flex-shrink:0}
+.cam-label{font-family:'IBM Plex Mono',monospace;font-size:10px;font-weight:700;color:var(--bright);margin-bottom:2px}
+.cam-sublbl{font-size:10px;color:var(--dim);margin-bottom:6px}
+.cam-btns{display:flex;gap:7px}
+.btn{font-family:'IBM Plex Mono',monospace;font-size:8px;letter-spacing:1px;text-transform:uppercase;padding:3px 9px;border:1px solid var(--border);background:transparent;color:var(--dim);cursor:pointer;transition:all .15s}
+.btn:hover{border-color:var(--amber);color:var(--amber)}
+.btn.accent{border-color:var(--amber);color:var(--amber)}
+.alert-detail{flex:1;overflow-y:auto;padding:13px}
+.alert-detail::-webkit-scrollbar{width:2px}
+.alert-detail::-webkit-scrollbar-thumb{background:var(--border)}
+.empty-det{display:flex;flex-direction:column;align-items:center;justify-content:center;height:150px;font-family:'IBM Plex Mono',monospace;font-size:9px;color:var(--dim);gap:8px;text-align:center}
+.dl{font-family:'IBM Plex Mono',monospace;font-size:8px;letter-spacing:2px;color:var(--dim);text-transform:uppercase;margin-bottom:3px}
+.dv{font-size:11px;color:var(--bright);margin-bottom:9px}
+.dv.mono{font-family:'IBM Plex Mono',monospace;font-size:13px;font-weight:700;color:var(--amber);letter-spacing:3px}
+.dv.mono.silver{color:var(--silver)}.dv.mono.green{color:var(--green)}.dv.mono.blue{color:var(--blue)}
+.hr{height:1px;background:var(--border);margin:8px 0}
+.row2{display:flex;gap:12px}.row2>div{flex:1}
+.near-section{padding:0 13px 12px;flex-shrink:0}
+.thumb-grid{display:grid;grid-template-columns:1fr 1fr;gap:3px;margin-top:5px}
+.thumb{aspect-ratio:16/9;background:#000;overflow:hidden;cursor:pointer;border:1px solid var(--border);transition:border-color .15s}
+.thumb:hover{border-color:var(--amber)}
+.thumb img{width:100%;height:100%;object-fit:cover}
+.statusbar{height:22px;background:var(--bg3);border-top:1px solid var(--border);display:flex;align-items:center;padding:0 14px;gap:20px;font-family:'IBM Plex Mono',monospace;font-size:8px;color:var(--dim);flex-shrink:0}
+.si{display:flex;align-items:center;gap:4px}
+.si strong{color:var(--text)}
+.scan-panel{position:fixed;bottom:22px;right:0;width:300px;background:var(--bg2);border-left:1px solid var(--border);border-top:1px solid var(--border);z-index:2000;font-family:'IBM Plex Mono',monospace;font-size:9px;max-height:300px;display:none;flex-direction:column}
+.scan-hdr{padding:8px 12px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;color:var(--dim);letter-spacing:2px;text-transform:uppercase;flex-shrink:0}
+.scan-hdr span{color:var(--red)}
+.scan-log{flex:1;overflow-y:auto;padding:6px 10px}
+.scan-log::-webkit-scrollbar{width:2px}
+.scan-log::-webkit-scrollbar-thumb{background:var(--border)}
+.scan-entry{padding:4px 0;border-bottom:1px solid var(--border);color:var(--dim);line-height:1.5}
+.scan-entry.flagged{color:var(--red)}
+.scan-entry.sent{color:var(--green)}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div style="display:flex;align-items:center">
+    <div class="logo">C0RRID0R<span class="logo-sub">MISSING PERSONS ALERT SYSTEM</span></div>
+  </div>
+  <div class="stat-pills">
+    <div class="stat-pill"><div class="dot d-amber"></div><span id="s-amber">— AMBER</span></div>
+    <div class="stat-pill"><div class="dot d-silver"></div><span id="s-silver">— SILVER</span></div>
+    <div class="stat-pill"><div class="dot d-green" style="animation:none"></div><span id="s-green">— GREEN</span></div>
+    <div class="stat-pill"><div class="dot d-blue"></div><span id="s-blue">— BLUE</span></div>
+  </div>
+  <div class="hdr-right">
+    <div class="live-badge"><div class="dot d-green"></div>LIVE</div>
+    <div id="clock">--:--:--</div>
+    <div>INDIANA POC</div>
+  </div>
+</div>
+
+<div class="main">
+  <div class="panel-left">
+    <div class="panel-hdr">
+      <span>ACTIVE ALERTS <span class="real-badge">LIVE</span></span>
+      <span id="total-ct">FETCHING...</span>
+    </div>
+    <div class="filter-bar">
+      <div class="ftab on" data-f="all">ALL</div>
+      <div class="ftab" data-f="amber">AMB</div>
+      <div class="ftab" data-f="silver">SIL</div>
+      <div class="ftab" data-f="green">GRN</div>
+      <div class="ftab" data-f="blue">BLU</div>
+    </div>
+    <div class="nation-strip">
+      <strong>↗ NATIONWIDE</strong> — Multi-state expansion in progress<br>
+      Camera integration: <strong>IN DEVELOPMENT</strong>
+    </div>
+    <div class="alerts-scroll" id="alert-list">
+      <div class="no-alerts">⟳ FETCHING LIVE DATA...</div>
+    </div>
+  </div>
+
+  <div class="panel-map">
+    <div id="map"></div>
+    <div class="map-legend">
+      <div class="leg-row"><div class="leg-dot" style="background:var(--green)"></div>INDOT CAMERA</div>
+      <div class="leg-row"><div class="leg-dot" style="background:var(--amber)"></div>AMBER ALERT</div>
+      <div class="leg-row"><div class="leg-dot" style="background:var(--silver)"></div>SILVER ALERT</div>
+      <div class="leg-row"><div class="leg-dot" style="background:var(--green);opacity:.5"></div>GREEN ALERT</div>
+      <div class="leg-row"><div class="leg-dot" style="background:var(--blue)"></div>BLUE ALERT</div>
+    </div>
+  </div>
+
+  <div class="panel-right">
+    <div class="cam-viewport">
+      <div class="cam-placeholder" id="cam-ph">
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#2a3040" stroke-width="1.2"><path d="M15 10l4.553-2.069A1 1 0 0121 8.87v6.261a1 1 0 01-1.447.894L15 14M3 8a2 2 0 012-2h10a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V8z"/></svg>
+        SELECT A CAMERA
+      </div>
+      <img id="cam-img" alt="">
+      <div class="cam-overlay">
+        <span class="cam-tag cam-live" id="cam-live">⬤ LIVE</span>
+        <span class="cam-tag cam-ts" id="cam-ts"></span>
+      </div>
+    </div>
+    <div class="cam-meta" id="cam-meta">
+      <div class="cam-label" id="cam-lbl"></div>
+      <div class="cam-sublbl" id="cam-sub"></div>
+      <div class="cam-btns">
+        <button class="btn accent" onclick="refreshCam()">↻ REFRESH</button>
+        <button class="btn" onclick="openFeed()">⤢ OPEN</button>
+      </div>
+    </div>
+    <div class="panel-hdr" style="flex-shrink:0"><span>ALERT DETAIL</span></div>
+    <div class="alert-detail" id="alert-detail">
+      <div class="empty-det">
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#2a3040" stroke-width="1.2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        SELECT AN ALERT<br>TO VIEW DETAILS
+      </div>
+    </div>
+    <div class="near-section" id="near-sec" style="display:none">
+      <div class="panel-hdr" style="padding:0;border:none;margin-bottom:5px"><span>NEARBY CAMERAS</span></div>
+      <div class="thumb-grid" id="thumb-grid"></div>
+    </div>
+  </div>
+</div>
+
+<div class="statusbar">
+  <div class="si"><div class="dot d-green" style="width:5px;height:5px"></div>INDOT FEED CONNECTED</div>
+  <div class="si">ISP FEED: <strong id="feed-status">CONNECTING...</strong></div>
+  <div class="si">SYNC: <strong id="last-sync">--:--</strong></div>
+  <div class="si" style="margin-left:auto">NAPTOWN UNSOLVED — C0RRID0R v0.7</div>
+</div>
+
+<div class="scan-panel" id="scan-panel">
+  <div class="scan-hdr"><span>⬤ SCANNING</span><span id="scan-count">0 FLAGGED</span></div>
+  <div class="scan-log" id="scan-log"></div>
+</div>
+
+<script>
+// ══════════════════════════════════════════════════════
+// COORDINATE ENGINE — v1.0
+// Parses INDOT camera ID/title → accurate lat/lon
+// Piecewise linear interpolation between real anchor pts
+// ══════════════════════════════════════════════════════
+const ANCHORS = {
+  '065':[[0,38.186,-85.764],[5,38.264,-85.752],[9,38.334,-85.730],[22,38.478,-85.739],[29,38.589,-85.751],[41,38.710,-85.793],[55,38.857,-85.821],[65,38.975,-85.893],[68,39.002,-85.905],[79,39.185,-85.905],[89,39.556,-86.030],[99,39.620,-86.094],[107,39.760,-86.159],[111,39.761,-86.157],[113,39.791,-86.184],[115,39.819,-86.223],[123,39.919,-86.304],[128,39.949,-86.353],[133,40.002,-86.421],[137,40.055,-86.450],[140,40.089,-86.501],[146,40.162,-86.501],[150,40.221,-86.489],[158,40.289,-86.501],[168,40.418,-86.700],[172,40.492,-86.802],[175,40.531,-86.826],[178,40.557,-86.882],[188,40.683,-86.944],[193,40.745,-87.048],[201,40.815,-87.093],[204,40.854,-87.097],[215,40.942,-87.188],[220,41.002,-87.230],[229,41.117,-87.271],[231,41.136,-87.296],[235,41.183,-87.420],[240,41.253,-87.500],[245,41.330,-87.506],[247,41.358,-87.504],[248,41.373,-87.508],[250,41.397,-87.510],[252,41.421,-87.512],[254,41.450,-87.512],[255,41.468,-87.513],[256,41.484,-87.514],[257,41.497,-87.514],[258,41.511,-87.518],[259,41.522,-87.525],[260,41.534,-87.531],[261,41.549,-87.538],[262,41.636,-87.524]],
+  '070':[[0,39.484,-87.413],[3,39.479,-87.383],[6,39.470,-87.339],[9,39.466,-87.304],[11,39.467,-87.310],[13,39.467,-87.267],[15,39.479,-87.229],[16,39.494,-87.218],[41,39.501,-86.791],[55,39.591,-86.530],[57,39.606,-86.503],[59,39.621,-86.474],[60,39.630,-86.459],[62,39.648,-86.431],[64,39.668,-86.404],[65,39.676,-86.388],[66,39.682,-86.376],[67,39.691,-86.360],[68,39.700,-86.345],[70,39.720,-86.303],[72,39.744,-86.267],[73,39.754,-86.252],[74,39.762,-86.237],[75,39.768,-86.234],[76,39.769,-86.220],[78,39.769,-86.193],[79,39.769,-86.181],[83,39.769,-86.153],[84,39.769,-86.142],[85,39.769,-86.130],[86,39.769,-86.116],[87,39.769,-86.103],[88,39.771,-86.086],[89,39.772,-86.072],[90,39.774,-86.056],[91,39.775,-86.038],[92,39.773,-86.025],[93,39.773,-86.009],[94,39.774,-85.995],[96,39.775,-85.969],[100,39.776,-85.916],[103,39.782,-85.872],[105,39.791,-85.841],[107,39.805,-85.811],[115,39.800,-85.694],[123,39.843,-85.528],[126,39.856,-85.484],[131,39.862,-85.404],[137,39.873,-85.380],[145,39.878,-85.253],[149,39.881,-85.204],[151,39.884,-85.178],[152,39.885,-85.162],[156,39.885,-85.103]],
+  '069':[[13,37.983,-87.510],[120,38.985,-86.533],[136,39.197,-86.519],[137,39.210,-86.516],[138,39.225,-86.510],[139,39.237,-86.495],[140,39.252,-86.482],[141,39.265,-86.465],[142,39.278,-86.448],[143,39.292,-86.431],[144,39.308,-86.413],[146,39.333,-86.378],[147,39.348,-86.362],[149,39.377,-86.330],[150,39.393,-86.315],[153,39.434,-86.281],[154,39.450,-86.269],[156,39.482,-86.244],[157,39.501,-86.228],[158,39.522,-86.195],[159,39.547,-86.169],[160,39.565,-86.155],[161,39.589,-86.118],[200,39.805,-86.066],[201,39.822,-86.066],[202,39.840,-86.049],[203,39.858,-86.034],[204,39.873,-86.023],[205,39.887,-86.008],[206,39.905,-85.988],[207,39.923,-85.974],[208,39.940,-85.956],[209,39.960,-85.938],[210,39.982,-85.920],[212,40.013,-85.878],[214,40.044,-85.840],[217,40.085,-85.780],[218,40.101,-85.763],[220,40.132,-85.728],[222,40.167,-85.693],[224,40.204,-85.665],[226,40.244,-85.639],[227,40.265,-85.631],[229,40.307,-85.617],[231,40.353,-85.603],[250,40.607,-85.519],[254,40.680,-85.449],[259,40.759,-85.381],[264,40.847,-85.336],[272,40.961,-85.297],[277,41.034,-85.232],[286,41.149,-85.197],[293,41.224,-85.158],[296,41.265,-85.137],[299,41.308,-85.099],[302,41.348,-85.078],[304,41.375,-85.071],[305,41.387,-85.070],[307,41.409,-85.073],[309,41.431,-85.087],[311,41.449,-85.120],[312,41.459,-85.124],[313,41.468,-85.131],[315,41.487,-85.138],[317,41.507,-85.137],[318,41.517,-85.143],[320,41.534,-85.154],[321,41.544,-85.170],[324,41.590,-85.214]],
+  '074':[[5,39.818,-87.467],[52,39.796,-86.861],[66,39.790,-86.389],[67,39.784,-86.377],[68,39.770,-86.359],[69,39.755,-86.346],[70,39.741,-86.330],[71,39.727,-86.313],[74,39.688,-86.266],[95,39.660,-86.021],[96,39.658,-86.006],[97,39.655,-85.990],[99,39.650,-85.962],[101,39.649,-85.936],[103,39.649,-85.907],[105,39.650,-85.877],[107,39.652,-85.843],[109,39.659,-85.812],[111,39.678,-85.783],[112,39.690,-85.762],[114,39.718,-85.731],[115,39.731,-85.718],[117,39.756,-85.690],[118,39.766,-85.671],[123,39.803,-85.576],[132,39.826,-85.422],[134,39.831,-85.394],[143,39.849,-85.261],[149,39.852,-85.164],[155,39.855,-85.077],[163,39.858,-84.968],[169,39.862,-84.866]],
+  '094':[[0,41.621,-87.529],[3,41.613,-87.497],[5,41.608,-87.473],[6,41.605,-87.462],[9,41.604,-87.421],[11,41.605,-87.397],[12,41.606,-87.382],[14,41.608,-87.362],[15,41.610,-87.344],[17,41.613,-87.312],[18,41.615,-87.296],[19,41.617,-87.281],[20,41.618,-87.268],[21,41.619,-87.253],[22,41.620,-87.235],[23,41.621,-87.220],[24,41.621,-87.205],[25,41.622,-87.188],[27,41.623,-87.156],[28,41.627,-87.136],[29,41.631,-87.119],[30,41.635,-87.100],[32,41.638,-87.065],[34,41.638,-87.038],[35,41.641,-87.016],[37,41.645,-86.975],[38,41.644,-86.958],[39,41.641,-86.938],[40,41.638,-86.917],[41,41.638,-86.897],[42,41.643,-86.877],[43,41.649,-86.857],[44,41.656,-86.837]],
+  '064':[[0,38.196,-87.987],[7,38.225,-87.853],[72,38.330,-87.109],[105,38.277,-86.607],[118,38.268,-86.503],[119,38.268,-86.491],[120,38.268,-86.477],[121,38.266,-86.462],[122,38.265,-86.449],[123,38.264,-86.432],[124,38.266,-86.414]],
+  '265':[[0,38.268,-85.734],[1,38.270,-85.757],[2,38.279,-85.769],[3,38.294,-85.775],[4,38.308,-85.778],[5,38.318,-85.771],[6,38.330,-85.766],[7,38.340,-85.763],[8,38.349,-85.758],[29,38.282,-85.734],[30,38.279,-85.737],[31,38.276,-85.742],[32,38.273,-85.749],[33,38.269,-85.757]],
+  '465':[[1,39.622,-86.097],[2,39.634,-86.097],[3,39.647,-86.118],[4,39.658,-86.149],[5,39.664,-86.179],[6,39.668,-86.213],[7,39.671,-86.220],[8,39.672,-86.223],[9,39.678,-86.226],[10,39.686,-86.230],[11,39.697,-86.237],[12,39.709,-86.265],[14,39.730,-86.310],[15,39.742,-86.327],[17,39.762,-86.344],[18,39.778,-86.349],[19,39.798,-86.344],[21,39.816,-86.332],[23,39.843,-86.327],[24,39.851,-86.320],[26,39.879,-86.300],[29,39.909,-86.255],[30,39.923,-86.235],[32,39.940,-86.187],[33,39.945,-86.169],[34,39.948,-86.146],[35,39.940,-86.110],[37,39.922,-86.084],[38,39.910,-86.068],[39,39.895,-86.059],[41,39.873,-86.056],[42,39.855,-86.055],[43,39.836,-86.057],[44,39.815,-86.060],[45,39.791,-86.066],[46,39.770,-86.072],[47,39.751,-86.077],[48,39.734,-86.079],[49,39.719,-86.075],[50,39.706,-86.068],[51,39.692,-86.066],[52,39.680,-86.076]],
+  '469':[[1,41.067,-85.136],[4,41.048,-85.127],[6,41.030,-85.127],[9,41.007,-85.126],[11,40.989,-85.141],[13,40.974,-85.153],[15,40.961,-85.173],[17,40.948,-85.193],[19,40.938,-85.215],[20,40.931,-85.230],[23,40.916,-85.266],[24,40.913,-85.283],[26,40.911,-85.313],[29,40.921,-85.341],[30,40.929,-85.349]],
+  '865':[[2,39.867,-86.330],[3,39.855,-86.330]],
+};
+
+const INDY_SURFACE = {
+  'fall creek pkwy & keystone':[39.845,-86.128],
+  'fall creek pkwy & meridian':[39.842,-86.156],
+  'kentucky ave & raymond':[39.707,-86.210],
+  'raymond st & southeastern':[39.706,-86.122],
+  'southeastern ave & washington':[39.755,-86.107],
+  'hanna ave & kentucky':[39.699,-86.189],
+  'east st & madison':[39.762,-86.131],
+  'raymond st & shelby':[39.706,-86.137],
+  'crawfordsville rd & high school rd':[39.780,-86.254],
+  'harding st & oliver':[39.745,-86.199],
+  'mccarty st & west':[39.756,-86.174],
+  'davidson st & michigan':[39.774,-86.153],
+  '10th st, mlk blvd & west':[39.778,-86.174],
+  'lynhurst dr & washington':[39.767,-86.247],
+  '62nd st & keystone':[39.850,-86.128],
+};
+
+const NAMED_LOCS = {
+  'LOGANSPORT':[40.754,-86.356],'NORTH MANCHESTER':[41.001,-85.771],'AMITY':[39.544,-86.011],
+  'SEYMOUR':[38.944,-85.893],'BIRDSEYE':[38.321,-86.699],'CORYDON':[38.210,-86.127],
+  'BLOOMINGTON':[39.165,-86.526],'EVANSVILLE':[37.975,-87.557],'TERRE HAUTE':[39.467,-87.313],
+  'FRANKFORT':[40.281,-86.511],'REMINGTON':[40.762,-87.153],'RENSSELAER':[40.936,-87.153],
+  'CROWN POINT':[41.418,-87.367],'SCOTTSBURG':[38.687,-85.778],'ARGOS':[41.236,-86.246],
+  'KOKOMO':[40.487,-86.134],'CARMEL':[39.978,-86.118],'WESTFIELD':[40.043,-86.128],
+  'VERSAILLES':[39.074,-85.254],'LOOGOOTEE':[38.663,-86.682],'GAS CITY':[40.489,-85.597],
+  'PENNTOWN':[39.422,-85.261],'FORT WAYNE':[41.079,-85.139],'CLOVERDALE':[39.512,-86.792],
+  'COVINGTON':[40.140,-87.391],'GREENSBURG':[39.337,-85.485],'VINCENNES':[38.677,-87.529],
+  'SULLIVAN':[39.092,-87.403],'FOWLER':[40.618,-87.318],'RICHMOND':[39.828,-84.890],
+  'NEW CASTLE':[39.928,-85.370],'ALEXANDRIA':[40.262,-85.678],'AUBURN':[41.367,-85.058],
+  'MICHIGAN CITY':[41.708,-86.895],'JEFFERSONVILLE':[38.277,-85.737],'BLACK RIVER':[38.225,-87.853],
+  'PLAINFIELD':[39.704,-86.393],'GREENFIELD':[39.789,-85.770],'COLUMBUS':[39.201,-85.921],
+  'LAFAYETTE':[40.416,-86.878],'LEBANON':[40.048,-86.468],
+};
+
+function mpInterp(route, mp) {
+  const pts = ANCHORS[route];
+  if (!pts) return null;
+  if (mp <= pts[0][0]) return [pts[0][1], pts[0][2]];
+  const last = pts[pts.length-1];
+  if (mp >= last[0]) return [last[1], last[2]];
+  for (let i=0; i<pts.length-1; i++) {
+    const [m0,a0,o0]=pts[i], [m1,a1,o1]=pts[i+1];
+    if (mp>=m0 && mp<=m1) {
+      const t=(mp-m0)/(m1-m0);
+      return [a0+t*(a1-a0), o0+t*(o1-o0)];
+    }
+  }
+  return null;
+}
+
+function resolveCameraCoords(cam) {
+  const title = cam.title || '';
+
+  // Strategy 1: full interstate milepost pattern  e.g. "1-065-107-2-1"
+  const m1 = title.match(/\b(\d{1,2})-(\d{3})-(\d{3})-(\d)\b/);
+  if (m1) {
+    const route = m1[2], mp = parseFloat(m1[3]) + parseFloat(m1[4])/10;
+    if (route === '037') {
+      // Former SR-37 / new I-69 alignment (Martinsville area)
+      const c = mpInterp('069', 136 + (mp - 68)*0.1);
+      if (c) return {lat:c[0], lon:c[1]};
+    }
+    const c = mpInterp(route, mp);
+    if (c) return {lat:c[0], lon:c[1]};
+  }
+
+  // Strategy 2: short pattern without decimal  e.g. "01-071-143"
+  const m2 = title.match(/\b(\d{2})-(\d{3})-(\d{3})\b/);
+  if (m2) {
+    const route = m2[2], mp = parseInt(m2[3])/10;
+    const c = mpInterp(route, mp);
+    if (c) return {lat:c[0], lon:c[1]};
+  }
+
+  // Strategy 3: Marion County surface streets (district 11, county 049)
+  if (title.includes('11-049') || title.includes('049-')) {
+    const lc = title.toLowerCase();
+    for (const [key, coords] of Object.entries(INDY_SURFACE)) {
+      if (lc.includes(key)) return {lat:coords[0], lon:coords[1]};
+    }
+    return {lat:39.769, lon:-86.158};
+  }
+
+  // Strategy 4: Kentucky border cameras
+  if (title.toLowerCase().includes('ky') && (title.includes('064') || title.includes('I-64'))) {
+    return {lat:38.193, lon:-85.750};
+  }
+  if (title.includes('ky2-041')) return {lat:38.028, lon:-85.689};
+
+  // Strategy 5: Named RWIS / landmark locations
+  const uc = title.toUpperCase();
+  for (const [loc, coords] of Object.entries(NAMED_LOCS)) {
+    if (uc.includes(loc)) return {lat:coords[0], lon:coords[1]};
+  }
+
+  // Fallback: center of Indiana
+  return {lat:39.768, lon:-86.158};
+}
+
+// ══════════════════════════════════════════════════════
+// APP CONSTANTS & STATE
+// ══════════════════════════════════════════════════════
+const CAM    = id => `/.netlify/functions/camproxy?id=${id}&t=${Date.now()}`;
+const PROXY  = '/.netlify/functions/alertproxy?type=';
+const EMAILJS_KEY      = 'TFSn6xdqCFFIEZ0-k';
+const EMAILJS_SERVICE  = 'service_8pc97rn';
+const EMAILJS_TEMPLATE = 'template_e80x5c9';
+
+const ISP_SOURCES = [
+  {url:'https://www.in.gov/amberalert/',  type:'amber'},
+  {url:'https://www.in.gov/silveralert/', type:'silver'},
+  {url:'https://www.in.gov/greenalert/',  type:'green'},
+  {url:'https://www.in.gov/bluealerts/',  type:'blue'},
+];
+
+const FALLBACK_CAMERAS = [
+  {id:'cam-i65-gary', img:'01-032-005-cam1', label:'I-65 — Gary',           route:'I-65',    lat:41.52, lon:-87.31},
+  {id:'cam-i65-laf',  img:'01-032-008-cam1', label:'I-65 — Lafayette',      route:'I-65',    lat:40.41, lon:-86.87},
+  {id:'cam-i65-indn', img:'01-032-017-cam1', label:'I-65 — Indianapolis N', route:'I-65',    lat:39.92, lon:-86.12},
+  {id:'cam-i65-col',  img:'01-032-038-cam1', label:'I-65 — Columbus',       route:'I-65',    lat:39.18, lon:-85.90},
+  {id:'cam-i65-jeff', img:'01-006-003-cam1', label:'I-65 — Jeffersonville', route:'I-65',    lat:38.34, lon:-85.73},
+  {id:'cam-i70-th',   img:'01-032-041-cam1', label:'I-70 — Terre Haute',    route:'I-70',    lat:39.47, lon:-87.38},
+  {id:'cam-i70-inw',  img:'01-032-049-cam1', label:'I-70 — Indianapolis W', route:'I-70',    lat:39.77, lon:-86.28},
+  {id:'cam-i70-ine',  img:'01-002-073-cam1', label:'I-70 — Indianapolis E', route:'I-70',    lat:39.77, lon:-85.93},
+  {id:'cam-i70-rich', img:'01-002-164-cam1', label:'I-70 — Richmond',       route:'I-70',    lat:39.83, lon:-84.89},
+  {id:'cam-i69-mun',  img:'01-002-186-cam1', label:'I-69 — Muncie',         route:'I-69',    lat:40.19, lon:-85.39},
+  {id:'cam-i69-fw',   img:'01-006-011-cam1', label:'I-69 — Fort Wayne',     route:'I-69',    lat:41.08, lon:-85.13},
+  {id:'cam-i74-craw', img:'01-011-007-cam1', label:'I-74 — Crawfordsville', route:'I-74',    lat:40.04, lon:-86.85},
+  {id:'cam-i74-shel', img:'01-032-017-cam1', label:'I-74 — Shelbyville',    route:'I-74',    lat:39.52, lon:-85.74},
+  {id:'cam-i90-sb',   img:'01-032-038-cam1', label:'I-80/90 — South Bend',  route:'I-80/90', lat:41.68, lon:-86.24},
+  {id:'cam-i90-elk',  img:'01-032-049-cam1', label:'I-80/90 — Elkhart',     route:'I-80/90', lat:41.68, lon:-85.96},
+  {id:'cam-i465-sw',  img:'01-002-073-cam1', label:'I-465 — SW',            route:'I-465',   lat:39.70, lon:-86.24},
+  {id:'cam-i465-ne',  img:'01-002-164-cam1', label:'I-465 — NE',            route:'I-465',   lat:39.90, lon:-86.02},
+  {id:'cam-us31',     img:'01-032-008-cam1', label:'US-31 — Indy N',        route:'US-31',   lat:40.03, lon:-86.02},
+  {id:'cam-i94-ham',  img:'01-032-005-cam1', label:'I-94 — Hammond',        route:'I-94',    lat:41.57, lon:-87.50},
+  {id:'cam-i64-ev',   img:'01-006-003-cam1', label:'I-64 — Evansville',     route:'I-64',    lat:37.97, lon:-87.57},
+];
+
+const COLOR = {amber:'#f5a623', silver:'#a8b4c0', green:'#2dcc70', blue:'#4a9eff'};
+
+let ALERTS = [], CAMERAS = [...FALLBACK_CAMERAS], LIVE_CAMERAS = [];
+let selAlert = null, selCam = null, curFilter = 'all';
+let map, camMarkers = {}, alertMarkers = {};
+let hlsInstance = null;
+let scanIntervals = {}, flagCount = 0, emailjsReady = false;
+
+// ── INIT ──────────────────────────────────────────────
+window.addEventListener('DOMContentLoaded', () => {
+  initClock();
+  initMap();
+  fetchAllAlerts();
+  loadLiveCameras();
+  setInterval(fetchAllAlerts, 3 * 60 * 1000);
+  setInterval(loadLiveCameras, 30 * 60 * 1000);
+});
+
+// ── CLOCK ─────────────────────────────────────────────
+function initClock() {
+  function tick() {
+    const t = new Date().toLocaleTimeString('en-US', {hour12:false, timeZone:'America/Indiana/Indianapolis'});
+    document.getElementById('clock').textContent = t + ' ET';
+    document.getElementById('last-sync').textContent = t.slice(0, 5);
+  }
+  tick();
+  setInterval(tick, 1000);
+}
+
+// ── MAP ───────────────────────────────────────────────
+function initMap() {
+  map = L.map('map', {center:[39.9,-86.1], zoom:7, zoomControl:false, attributionControl:false});
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+  }).addTo(map);
+  L.control.zoom({position:'bottomright'}).addTo(map);
+  plotFallbackCameras();
+}
+
+function plotFallbackCameras() {
+  FALLBACK_CAMERAS.forEach(cam => {
+    const el = document.createElement('div');
+    el.className = 'cam-dot';
+    const mk = L.marker([cam.lat, cam.lon], {
+      icon: L.divIcon({className:'', html:el, iconSize:[8,8], iconAnchor:[4,4]})
+    }).addTo(map);
+    mk.on('click', () => pickCamera(cam));
+    camMarkers[cam.id] = {mk, el, data:cam};
+  });
+}
+
+// ── LIVE CAMERAS ──────────────────────────────────────
+async function loadLiveCameras() {
+  try {
+    const res = await fetch('/.netlify/functions/cameralocations');
+    const json = await res.json();
+    if (json.cameras && json.cameras.length) {
+      LIVE_CAMERAS = json.cameras;
+      plotLiveCameras();
+      document.getElementById('feed-status').textContent = 'LIVE — ' + json.total + ' CAMS';
+    }
+  } catch(e) {
+    console.warn('Camera index load failed:', e);
+  }
+}
+
+// ── THE FIX: use coordinate engine instead of random offsets ──
+function plotLiveCameras() {
+  // Clear existing markers
+  Object.values(camMarkers).forEach(({mk}) => map.removeLayer(mk));
+  camMarkers = {};
+
+  LIVE_CAMERAS.forEach(cam => {
+    // Resolve actual coordinates from camera ID/title
+    const coords = resolveCameraCoords(cam);
+
+    const el = document.createElement('div');
+    el.className = 'cam-dot';
+    const mk = L.marker([coords.lat, coords.lon], {
+      icon: L.divIcon({className:'', html:el, iconSize:[8,8], iconAnchor:[4,4]})
+    }).addTo(map);
+    mk.bindTooltip(cam.title, {permanent:false, direction:'top'});
+    mk.on('click', () => pickLiveCamera(cam));
+    camMarkers[cam.id] = {mk, el, data:cam};
+  });
+}
+
+// ── ALERTS ────────────────────────────────────────────
+async function fetchAllAlerts() {
+  document.getElementById('feed-status').textContent = 'SYNCING...';
+  const results = [];
+  let id = 1;
+  for (const src of ISP_SOURCES) {
+    try {
+      const res = await fetch(`${PROXY}${src.type}`);
+      const html = await res.text();
+      const parsed = parseAlerts(html, src.type, id);
+      results.push(...parsed);
+      id += parsed.length;
+    } catch(e) { console.warn('fetch fail', src.type, e); }
+  }
+  ALERTS = results;
+  updateStats();
+  renderAlerts();
+  rebuildAlertMarkers();
+  document.getElementById('feed-status').textContent = LIVE_CAMERAS.length ? 'LIVE — ' + LIVE_CAMERAS.length + ' CAMS' : 'LIVE';
+  if (ALERTS.length) {
+    initEmailJS();
+    startScanningForAlerts(ALERTS);
+  }
+}
+
+function parseAlerts(html, type, startId) {
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+  const headers = [...doc.querySelectorAll('h2,h3,h4')];
+  const alertHeader = headers.find(h => h.textContent.toLowerCase().includes('active alert'));
+  if (!alertHeader) return [];
+  let node = alertHeader.nextElementSibling;
+  if (!node) return [];
+  if (node.textContent.toLowerCase().includes('no active') || node.textContent.toLowerCase().includes('currently no')) return [];
+  const alerts = [], blocks = [];
+  let curr = alertHeader.nextElementSibling;
+  while (curr) {
+    if (['H2','H3'].includes(curr.tagName)) break;
+    if (curr.textContent.trim()) blocks.push(curr);
+    curr = curr.nextElementSibling;
+  }
+  let id = startId;
+  for (const block of blocks) {
+    const text = block.textContent.trim();
+    if (!text || text.toLowerCase().includes('no active')) continue;
+    const nameMatch     = text.match(/Name[:\s]+([A-Z][a-zA-Z\s,]+?)(?:\n|,|\s{2}|Age|DOB)/i);
+    const ageMatch      = text.match(/Age[:\s]+(\d+)/i);
+    const vehicleMatch  = text.match(/Vehicle[:\s]+([^\n]+?)(?:\n|License|Plate|$)/i);
+    const plateMatch    = text.match(/(?:License|Plate|Tag)[:\s#]+([A-Z0-9\s\-]+?)(?:\n|\s{2}|$)/i);
+    const locationMatch = text.match(/(?:Last\s*(?:Seen|Known)|Location)[:\s]+([^\n]+?)(?:\n|$)/i);
+    const dirMatch      = text.match(/(?:Direction|Traveling|Headed)[:\s]+([^\n]+?)(?:\n|$)/i);
+    if (nameMatch || vehicleMatch) {
+      const name = nameMatch ? nameMatch[1].trim() : 'Unknown';
+      const age  = ageMatch  ? ', ' + ageMatch[1] : '';
+      const loc  = locationMatch ? locationMatch[1].trim() : 'Location unknown';
+      const corridor = inferCorridor(loc);
+      alerts.push({
+        id: id++, type, state:'IN',
+        subject: name + age,
+        vehicle: vehicleMatch ? vehicleMatch[1].trim() : 'Vehicle unknown',
+        plate:   plateMatch   ? plateMatch[1].trim().toUpperCase() : '—',
+        ps:'IN', lastSeen:loc,
+        dir:     dirMatch ? dirMatch[1].trim() : 'Unknown',
+        corridor, lat:39.78, lon:-86.15,
+        elapsed:'—', issued:'—', suspect:null,
+        cams: inferCameras(corridor),
+        isReal: true,
+      });
+    }
+  }
+  return alerts;
+}
+
+function inferCorridor(loc) {
+  if (!loc) return 'UNKNOWN';
+  const l = loc.toUpperCase();
+  if (l.includes('I-65')  || l.includes('I65'))  return 'I-65';
+  if (l.includes('I-70')  || l.includes('I70'))  return 'I-70';
+  if (l.includes('I-69')  || l.includes('I69'))  return 'I-69';
+  if (l.includes('I-74')  || l.includes('I74'))  return 'I-74';
+  if (l.includes('I-465'))                        return 'I-465';
+  if (l.includes('I-80')  || l.includes('I-90')) return 'I-80/90';
+  if (l.includes('US-31') || l.includes('US31')) return 'US-31';
+  return 'UNKNOWN';
+}
+
+function inferCameras(corridor) {
+  if (LIVE_CAMERAS.length) {
+    const cams = LIVE_CAMERAS.filter(c => c.route === corridor).map(c => c.id);
+    if (cams.length) return cams.slice(0, 3);
+  }
+  const cams = FALLBACK_CAMERAS.filter(c => c.route === corridor).map(c => c.id);
+  return cams.length ? cams.slice(0, 3) : ['cam-i65-indn'];
+}
+
+function updateStats() {
+  const c = t => ALERTS.filter(a => a.type === t).length;
+  document.getElementById('s-amber').textContent  = c('amber')  + ' AMBER';
+  document.getElementById('s-silver').textContent = c('silver') + ' SILVER';
+  document.getElementById('s-green').textContent  = c('green')  + ' GREEN';
+  document.getElementById('s-blue').textContent   = c('blue')   + ' BLUE';
+  document.getElementById('total-ct').textContent = ALERTS.length ? ALERTS.length + ' TOTAL' : 'ALL CLEAR';
+}
+
+function rebuildAlertMarkers() {
+  Object.values(alertMarkers).forEach(mk => map.removeLayer(mk));
+  alertMarkers = {};
+  ALERTS.forEach(a => {
+    const el = document.createElement('div');
+    el.className = 'alert-pin';
+    el.style.cssText = `background:${COLOR[a.type]};box-shadow:0 0 8px ${COLOR[a.type]}`;
+    const mk = L.marker([a.lat, a.lon], {
+      icon: L.divIcon({className:'', html:el, iconSize:[11,11], iconAnchor:[5,5]}),
+      zIndexOffset: 1000
+    }).addTo(map);
+    mk.on('click', () => pickAlert(a));
+    alertMarkers[a.id] = mk;
+  });
+}
+
+function renderAlerts() {
+  const src = curFilter === 'all' ? ALERTS : ALERTS.filter(a => a.type === curFilter);
+  if (!src.length) {
+    document.getElementById('alert-list').innerHTML = `<div class="no-alerts"><span>◉ ALL CLEAR</span><br><br>No active ${curFilter==='all'?'':curFilter+' '}alerts in Indiana.<br>Refreshes every 3 minutes.</div>`;
+    return;
+  }
+  document.getElementById('alert-list').innerHTML = src.map(a => `
+    <div class="acard ${a.type}${selAlert?.id===a.id?' active':''}" onclick="pickAlertById(${a.id})">
+      <div class="abadge ab-${a.type}">${a.type.toUpperCase()} — ${a.state}</div>
+      <div class="aname">${a.subject}</div>
+      <div class="avehicle">${a.vehicle}</div>
+      <div class="aplate ${a.type}">${a.plate} · ${a.ps}</div>
+      <div class="ameta"><span>${a.corridor}</span><span>${a.elapsed!=='—'?'+'+a.elapsed:''}</span></div>
+    </div>`).join('');
+}
+
+window.pickAlertById = id => pickAlert(ALERTS.find(a => a.id === id));
+
+function pickAlert(a) {
+  selAlert = a;
+  renderAlerts();
+  map.flyTo([a.lat, a.lon], 9, {duration:1.2});
+  Object.values(camMarkers).forEach(({el}) => {
+    el.style.background = 'var(--green)';
+    el.style.boxShadow  = 'none';
+    el.style.transform  = 'scale(1)';
+  });
+  a.cams.forEach(cid => {
+    const c = camMarkers[cid];
+    if (c) {
+      c.el.style.background = COLOR[a.type];
+      c.el.style.boxShadow  = `0 0 9px ${COLOR[a.type]}`;
+      c.el.style.transform  = 'scale(1.5)';
+    }
+  });
+  renderDetail(a);
+  renderNearby(a);
+  const firstId = a.cams[0];
+  const liveCam = LIVE_CAMERAS.find(c => c.id === firstId);
+  if (liveCam) pickLiveCamera(liveCam);
+  else {
+    const fallbackCam = FALLBACK_CAMERAS.find(c => c.id === firstId);
+    if (fallbackCam) pickCamera(fallbackCam);
+  }
+}
+
+function renderDetail(a) {
+  const c = COLOR[a.type];
+  document.getElementById('alert-detail').innerHTML = `
+    <div class="dl">SUBJECT</div><div class="dv" style="font-size:13px;font-weight:700">${a.subject}</div>
+    <div class="hr"></div>
+    <div class="dl">VEHICLE</div><div class="dv">${a.vehicle}</div>
+    <div class="dl">LICENSE PLATE</div><div class="dv mono ${a.type}">${a.plate} · ${a.ps}</div>
+    <div class="hr"></div>
+    <div class="dl">LAST KNOWN LOCATION</div><div class="dv">${a.lastSeen}</div>
+    <div class="dl">DIRECTION OF TRAVEL</div><div class="dv">${a.dir}</div>
+    ${a.suspect?`<div class="hr"></div><div class="dl">SUSPECT</div><div class="dv">${a.suspect}</div>`:''}
+    <div class="hr"></div>
+    <div class="row2">
+      <div><div class="dl">ISSUED</div><div class="dv" style="font-family:'IBM Plex Mono',monospace;font-size:10px">${a.issued!=='—'?a.issued+' ET':'—'}</div></div>
+      <div><div class="dl">ELAPSED</div><div class="dv" style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:${c}">${a.elapsed}</div></div>
+    </div>
+    <div class="dl">C0RRID0R CAMERAS</div>
+    <div class="dv" style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:${c}">${a.cams.length} ACTIVE — ${a.corridor}</div>
+    ${a.isReal?`<div class="hr"></div><div style="font-family:'IBM Plex Mono',monospace;font-size:8px;color:var(--green)">● SOURCE: INDIANA STATE POLICE — LIVE</div>`:''}`;
+}
+
+function renderNearby(a) {
+  document.getElementById('near-sec').style.display = 'block';
+  document.getElementById('thumb-grid').innerHTML = a.cams.map(cid => {
+    const liveCam = LIVE_CAMERAS.find(c => c.id === cid);
+    const fallCam = FALLBACK_CAMERAS.find(c => c.id === cid);
+    const imgSrc  = liveCam ? liveCam.imageUrl : CAM(fallCam?.img);
+    const label   = liveCam ? liveCam.title : (fallCam?.label || cid);
+    return `<div class="thumb" onclick="pickCameraById('${cid}')" title="${label}">
+      <img src="${imgSrc}" onerror="this.parentElement.style.background='#111'" alt="">
+    </div>`;
+  }).join('');
+}
+
+window.pickCameraById = id => {
+  const liveCam = LIVE_CAMERAS.find(c => c.id === id);
+  if (liveCam) pickLiveCamera(liveCam);
+  else pickCamera(FALLBACK_CAMERAS.find(c => c.id === id));
+};
+
+// ── CAMERA — FALLBACK STILL IMAGE ─────────────────────
+function pickCamera(cam) {
+  if (!cam) return;
+  selCam = cam;
+  if (hlsInstance) { hlsInstance.destroy(); hlsInstance = null; }
+  const img = document.getElementById('cam-img');
+  const ph  = document.getElementById('cam-ph');
+  ph.textContent = 'LOADING...';
+  img.style.display = 'none';
+  ph.style.display  = 'flex';
+  const tmp = new Image();
+  tmp.onload  = () => { img.src=tmp.src; img.style.display='block'; ph.style.display='none'; document.getElementById('cam-live').style.display='inline'; stampTime(); };
+  tmp.onerror = () => { ph.innerHTML=`<span style="font-size:9px;color:var(--dim);text-align:center">FEED UNAVAILABLE<br><span style="color:var(--text)">${cam.label}</span></span>`; ph.style.display='flex'; };
+  tmp.src = CAM(cam.img);
+  document.getElementById('cam-lbl').textContent = cam.label;
+  document.getElementById('cam-sub').textContent = cam.route;
+  document.getElementById('cam-meta').style.display = 'block';
+  Object.values(camMarkers).forEach(({el}) => el.classList.remove('sel'));
+  if (camMarkers[cam.id]) camMarkers[cam.id].el.classList.add('sel');
+}
+
+// ── CAMERA — LIVE HLS STREAM ──────────────────────────
+function pickLiveCamera(cam) {
+  if (!cam) return;
+  selCam = cam;
+  if (hlsInstance) { hlsInstance.destroy(); hlsInstance = null; }
+  const img     = document.getElementById('cam-img');
+  const ph      = document.getElementById('cam-ph');
+  const liveTag = document.getElementById('cam-live');
+  ph.textContent       = 'LOADING STREAM...';
+  img.style.display    = 'none';
+  ph.style.display     = 'flex';
+  liveTag.style.display = 'none';
+  document.getElementById('cam-lbl').textContent = cam.title || cam.id;
+  document.getElementById('cam-sub').textContent = cam.route || '';
+  document.getElementById('cam-meta').style.display = 'block';
+
+  if (cam.streamUrl && typeof Hls !== 'undefined' && Hls.isSupported()) {
+    let videoEl = document.getElementById('cam-video');
+    if (!videoEl) {
+      videoEl = document.createElement('video');
+      videoEl.id = 'cam-video';
+      videoEl.style.cssText = 'width:100%;height:100%;object-fit:cover;display:none;background:#000;position:absolute;top:0;left:0';
+      videoEl.muted = true;
+      videoEl.autoplay = true;
+      videoEl.playsInline = true;
+      document.querySelector('.cam-viewport').appendChild(videoEl);
+    }
+    hlsInstance = new Hls({enableWorker:true, lowLatencyMode:true});
+    hlsInstance.loadSource(cam.streamUrl);
+    hlsInstance.attachMedia(videoEl);
+    hlsInstance.on(Hls.Events.MANIFEST_PARSED, () => {
+      videoEl.play().catch(() => {});
+      videoEl.style.display  = 'block';
+      img.style.display      = 'none';
+      ph.style.display       = 'none';
+      liveTag.style.display  = 'inline';
+      liveTag.textContent    = '⬤ LIVE VIDEO';
+      stampTime();
+    });
+    hlsInstance.on(Hls.Events.ERROR, (e, d) => {
+      if (d.fatal) { videoEl.style.display='none'; loadStillFromLive(cam, img, ph, liveTag); }
+    });
+  } else {
+    loadStillFromLive(cam, img, ph, liveTag);
+  }
+  Object.values(camMarkers).forEach(({el}) => el.classList.remove('sel'));
+  if (camMarkers[cam.id]) camMarkers[cam.id].el.classList.add('sel');
+}
+
+function loadStillFromLive(cam, img, ph, liveTag) {
+  const tmp = new Image();
+  tmp.onload  = () => { img.src=tmp.src; img.style.display='block'; ph.style.display='none'; liveTag.style.display='inline'; liveTag.textContent='⬤ LIVE'; stampTime(); };
+  tmp.onerror = () => { ph.innerHTML=`<span style="font-size:9px;color:var(--dim);text-align:center">FEED UNAVAILABLE<br><span style="color:var(--text)">${cam.title||cam.id}</span></span>`; ph.style.display='flex'; };
+  tmp.src = (cam.imageUrl || CAM('01-032-005-cam1')) + '?t=' + Date.now();
+}
+
+function stampTime() {
+  const t = new Date().toLocaleTimeString('en-US', {hour12:false, hour:'2-digit', minute:'2-digit', second:'2-digit'});
+  document.getElementById('cam-ts').textContent = t + ' ET';
+}
+window.refreshCam = () => { if (selCam?.streamUrl) pickLiveCamera(selCam); else if (selCam) pickCamera(selCam); };
+window.openFeed   = () => { if (selCam?.imageUrl) window.open(selCam.imageUrl, '_blank'); else if (selCam?.img) window.open(CAM(selCam.img), '_blank'); };
+
+// ── VEHICLE SCANNER ───────────────────────────────────
+function initEmailJS() {
+  if (window.emailjs && !emailjsReady) {
+    emailjs.init({publicKey: EMAILJS_KEY});
+    emailjsReady = true;
+  }
+}
+
+function startScanningForAlerts(alerts) {
+  Object.values(scanIntervals).forEach(i => clearInterval(i));
+  scanIntervals = {};
+  if (!alerts.length) return;
+  document.getElementById('scan-panel').style.display = 'flex';
+  alerts.forEach(alert => {
+    logScan(`SCAN STARTED — ${alert.type.toUpperCase()} — ${alert.subject}`, 'info');
+    logScan(`TARGET: ${alert.vehicle} · ${alert.plate}`, 'info');
+    scanCorridorCameras(alert);
+    scanIntervals[alert.id] = setInterval(() => scanCorridorCameras(alert), 2 * 60 * 1000);
+  });
+}
+
+function scanCorridorCameras(alert) {
+  alert.cams.forEach(cid => {
+    const cam = FALLBACK_CAMERAS.find(c => c.id === cid);
+    if (cam) captureAndAnalyze(cam, alert);
+  });
+}
+
+function captureAndAnalyze(cam, alert) {
+  const canvas = document.createElement('canvas');
+  const ctx    = canvas.getContext('2d');
+  const img    = new Image();
+  img.crossOrigin = 'anonymous';
+  img.onload = () => {
+    canvas.width  = img.width  || 640;
+    canvas.height = img.height || 360;
+    ctx.drawImage(img, 0, 0);
+    const match = analyzeVehicleColor(ctx, canvas, alert.vehicle);
+    const ts = new Date().toLocaleTimeString('en-US', {hour12:false, timeZone:'America/Indiana/Indianapolis'});
+    if (match.flagged) {
+      flagCount++;
+      document.getElementById('scan-count').textContent = flagCount + ' FLAGGED';
+      logScan(`⬤ FLAGGED — ${cam.label} @ ${ts} — ${match.reason}`, 'flagged');
+      sendAlertEmail(alert, cam, ts, canvas.toDataURL('image/jpeg', 0.7), match.reason);
+    } else {
+      logScan(`✓ CLEAR — ${cam.label} @ ${ts}`, 'info');
+    }
+  };
+  img.onerror = () => logScan(`✗ FEED ERROR — ${cam.label}`, 'info');
+  img.src = CAM(cam.img);
+}
+
+function analyzeVehicleColor(ctx, canvas, vehicleDesc) {
+  const w = canvas.width, h = canvas.height;
+  const data = ctx.getImageData(0, Math.floor(h*0.4), w, Math.floor(h*0.3)).data;
+  let dark=0, light=0, red=0, blue=0, silver=0, total=0;
+  for (let i=0; i<data.length; i+=16) {
+    const r=data[i], g=data[i+1], b=data[i+2], br=(r+g+b)/3;
+    total++;
+    if (br<60)  dark++;
+    if (br>180) light++;
+    if (r>150&&g<80&&b<80)  red++;
+    if (b>150&&r<80&&g<80)  blue++;
+    if (br>140&&br<200&&Math.abs(r-g)<20) silver++;
+  }
+  const desc = vehicleDesc.toLowerCase();
+  if ((desc.includes('black')||desc.includes('dark'))   && dark/total>0.15)  return {flagged:true, reason:'Dark vehicle detected'};
+  if ((desc.includes('white')||desc.includes('light'))  && light/total>0.15) return {flagged:true, reason:'Light vehicle detected'};
+  if (desc.includes('red')                              && red/total>0.05)   return {flagged:true, reason:'Red vehicle detected'};
+  if (desc.includes('blue')                             && blue/total>0.05)  return {flagged:true, reason:'Blue vehicle detected'};
+  if ((desc.includes('silver')||desc.includes('gray')||desc.includes('grey')) && silver/total>0.1) return {flagged:true, reason:'Silver/gray vehicle detected'};
+  return {flagged:false, reason:''};
+}
+
+function sendAlertEmail(alert, cam, ts, screenshot, reason) {
+  initEmailJS();
+  if (!window.emailjs) return;
+  emailjs.send(EMAILJS_SERVICE, EMAILJS_TEMPLATE, {
+    alert_type:   alert.type.toUpperCase(),
+    subject:      alert.subject,
+    vehicle:      alert.vehicle,
+    plate:        alert.plate,
+    last_known:   alert.lastSeen,
+    direction:    alert.dir,
+    corridor:     alert.corridor,
+    camera_label: cam.label,
+    timestamp:    ts + ' ET',
+    camera_url:   `https://c0rrid0r.netlify.app/.netlify/functions/camproxy?id=${cam.img}`,
+    screenshot,
+    reason,
+  }).then(() => logScan(`✉ EMAIL SENT — ${cam.label} @ ${ts}`, 'sent'))
+    .catch(err => logScan(`✗ EMAIL FAILED — ${err.text||err}`, 'info'));
+}
+
+function logScan(msg, type='info') {
+  const log = document.getElementById('scan-log');
+  if (!log) return;
+  const entry = document.createElement('div');
+  entry.className = 'scan-entry' + (type==='flagged'?' flagged':type==='sent'?' sent':'');
+  entry.textContent = msg;
+  log.appendChild(entry);
+  log.scrollTop = log.scrollHeight;
+}
+
+// ── FILTERS ───────────────────────────────────────────
+document.querySelectorAll('.ftab').forEach(t => {
+  t.addEventListener('click', () => {
+    document.querySelectorAll('.ftab').forEach(x => x.classList.remove('on'));
+    t.classList.add('on');
+    curFilter = t.dataset.f;
+    renderAlerts();
+  });
+});
+</script>
+</body>
+</html>
