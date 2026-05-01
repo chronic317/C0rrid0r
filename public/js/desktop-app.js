@@ -117,6 +117,76 @@
       const o = document.getElementById('intro-overlay');
       if (o) o.style.display = 'none';
     }
+
+    // Show scan panel immediately so test buttons are reachable even with no
+    // active alerts. (It used to only appear after a real alert came in.)
+    const sp = document.getElementById('scan-panel');
+    if (sp) sp.style.display = 'flex';
+
+    // Inject FORCE TEST ALERT button next to the existing TEST button
+    if (!document.getElementById('btn-force-alert')) {
+      const testBtn = document.getElementById('btn-test-scan');
+      if (testBtn && testBtn.parentNode) {
+        const forceBtn = document.createElement('button');
+        forceBtn.id = 'btn-force-alert';
+        forceBtn.className = testBtn.className || 'btn';
+        forceBtn.textContent = 'FORCE TEST ALERT';
+        forceBtn.style.cssText = 'margin-left:6px;background:#5a1f1f;color:#ffb;border:1px solid #f5a623';
+        testBtn.parentNode.insertBefore(forceBtn, testBtn.nextSibling);
+        forceBtn.onclick = forceTestAlert;
+      }
+    }
+  }
+
+  // ── FORCE TEST ALERT ────────────────────────────────
+  // Injects a synthetic AMBER alert into the running pipeline so the whole
+  // chain (alert list → map pin → corridor inference → scanner → vehicle
+  // sizer → review queue) can be tested without waiting for a real alert.
+  function forceTestAlert() {
+    const targetCorridor = 'I-65';
+    const allCams = inferCameras(targetCorridor, LIVE_CAMERAS, FALLBACK_CAMERAS);
+    // Limit to 8 cameras so we don't hammer the proxy with 100+ simultaneous fetches
+    const cams = allCams.slice(0, 8);
+
+    const fake = {
+      id: 999000 + Math.floor(Math.random() * 1000),
+      type: 'amber',
+      state: 'IN',
+      subject: 'TEST ALERT — synthetic, not a real ISP alert',
+      vehicle: 'Silver Honda Civic',
+      plate: 'TEST123',
+      ps: 'IN',
+      lastSeen: 'Indianapolis, IN (test)',
+      dir: 'Northbound',
+      suspect: '',
+      issued: new Date().toLocaleString('en-US', {
+        timeZone: 'America/Indiana/Indianapolis',
+        hour12: false, month: '2-digit', day: '2-digit',
+        hour: '2-digit', minute: '2-digit',
+      }),
+      elapsed: '0m',
+      corridor: targetCorridor,
+      isReal: false,
+      lat: 39.78, lon: -86.15,
+      cams: cams,
+    };
+
+    // Add to top of alert list
+    ALERTS = [fake, ...ALERTS.filter(a => !String(a.id).startsWith('999'))];
+    updateStats();
+    renderAlerts();
+    rebuildAlertMarkers();
+
+    logScan(`⬤⬤⬤ FORCE TEST ALERT injected`, 'flagged');
+    logScan(`  ↳ corridor: ${targetCorridor}, scanning ${cams.length} cameras`, 'info');
+    logScan(`  ↳ target: ${fake.vehicle} ${fake.plate}`, 'info');
+    logScan(`  ↳ alert id: ${fake.id} (synthetic)`, 'info');
+
+    // Kick off scanning across all corridor cameras for this synthetic alert
+    startScanningForAlerts(ALERTS);
+
+    // Auto-select it on the map so user sees it visualized
+    pickAlert(fake);
   }
 
   function dismissIntro() {
