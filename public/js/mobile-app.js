@@ -49,6 +49,12 @@
 
   const COLOR = {amber:'#f5a623', silver:'#a8b4c0', green:'#2dcc70', blue:'#4a9eff'};
 
+  // Build a /api/camproxy URL for a live cam (uses ?url= when imageUrl is present)
+  function camThumbUrl(cam) {
+    if (cam.imageUrl) return '/api/camproxy?url=' + encodeURIComponent(cam.imageUrl);
+    return '/api/camproxy?id=' + encodeURIComponent(cam.id);
+  }
+
   // ── STATE ────────────────────────────────────────────
   let ALERTS = [];
   let LIVE_CAMERAS = [];
@@ -59,40 +65,135 @@
   let prevFrames = new Map();
   let camFilter = '';
 
-  // ── INIT ─────────────────────────────────────────────
+  // ── INIT — buttons FIRST, each step in own try/catch ─
   window.addEventListener('DOMContentLoaded', () => {
-    initClock();
-    initMap();
-    bindTabs();
-    bindButtons();
-    bindSheets();
-    bindReviewQueue();
-    bindCamFilter();
-    fetchAllAlerts();
-    loadLiveCameras();
+    try { bindButtons(); }      catch (e) { console.error('[corridor] bindButtons failed:', e); }
+    try { bindTabs(); }         catch (e) { console.error('[corridor] bindTabs failed:', e); }
+    try { bindSheets(); }       catch (e) { console.error('[corridor] bindSheets failed:', e); }
+    try { bindReviewQueue(); }  catch (e) { console.error('[corridor] bindReviewQueue failed:', e); }
+    try { bindCamFilter(); }    catch (e) { console.error('[corridor] bindCamFilter failed:', e); }
+    try { initClock(); }        catch (e) { console.error('[corridor] initClock failed:', e); }
+    try { initMap(); }          catch (e) { console.error('[corridor] initMap failed:', e); }
+    try { fetchAllAlerts(); }   catch (e) { console.error('[corridor] fetchAllAlerts failed:', e); }
+    try { loadLiveCameras(); }  catch (e) { console.error('[corridor] loadLiveCameras failed:', e); }
     setInterval(fetchAllAlerts, 3 * 60 * 1000);
     setInterval(loadLiveCameras, 30 * 60 * 1000);
   });
 
   // ── INTRO ────────────────────────────────────────────
   function bindButtons() {
-    document.getElementById('btn-refresh').onclick = refreshCam;
-    document.getElementById('btn-open').onclick    = openFeed;
-    document.getElementById('btn-test-scan').onclick = runTestScan;
-    document.getElementById('btn-toggle-scan-log').onclick = () => document.getElementById('scan-log-sheet').classList.add('on');
-    document.getElementById('btn-close-scan-log-btn').onclick = () => document.getElementById('scan-log-sheet').classList.remove('on');
-    document.getElementById('btn-close-scan-log').onclick = () => document.getElementById('scan-log-sheet').classList.remove('on');
-    document.getElementById('btn-intro-dismiss').onclick = dismissIntro;
-    document.getElementById('queue-pill').onclick = openReviewQueue;
+    // Intro dismiss FIRST — bind before anything that might throw
+    const introBtn = document.getElementById('btn-intro-dismiss');
+    if (introBtn) {
+      introBtn.onclick = dismissIntro;
+    } else {
+      console.warn('[corridor] btn-intro-dismiss not found in DOM');
+    }
+
+    // Backup #1: Escape key dismisses intro
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        const overlay = document.getElementById('intro-overlay');
+        if (overlay && overlay.style.display !== 'none' && getComputedStyle(overlay).display !== 'none') {
+          dismissIntro();
+        }
+      }
+    });
+
+    // Backup #2: tap outside the intro card dismisses
+    const overlay = document.getElementById('intro-overlay');
+    if (overlay) {
+      overlay.addEventListener('click', (e) => {
+        if (e.target === overlay) dismissIntro();
+      });
+    }
+
+    // Other buttons — null-checked individually
+    const bind = (id, handler) => {
+      const el = document.getElementById(id);
+      if (el) el.onclick = handler;
+    };
+    bind('btn-refresh',          refreshCam);
+    bind('btn-open',             openFeed);
+    bind('btn-test-scan',        runTestScan);
+    bind('btn-toggle-scan-log',  () => { const s = document.getElementById('scan-log-sheet'); if (s) s.classList.add('on'); });
+    bind('btn-close-scan-log-btn', () => { const s = document.getElementById('scan-log-sheet'); if (s) s.classList.remove('on'); });
+    bind('btn-close-scan-log',   () => { const s = document.getElementById('scan-log-sheet'); if (s) s.classList.remove('on'); });
+    bind('queue-pill',           openReviewQueue);
 
     if (sessionStorage.getItem('corridor_intro_seen')) {
       const o = document.getElementById('intro-overlay');
       if (o) o.style.display = 'none';
     }
+
+    // Show scan bar immediately so test buttons are reachable
+    const sb = document.getElementById('scan-bar');
+    if (sb) sb.style.display = 'flex';
+
+    // Inject FORCE TEST ALERT button next to the existing TEST button
+    if (!document.getElementById('btn-force-alert')) {
+      const testBtn = document.getElementById('btn-test-scan');
+      if (testBtn && testBtn.parentNode) {
+        const forceBtn = document.createElement('button');
+        forceBtn.id = 'btn-force-alert';
+        forceBtn.className = testBtn.className || 'btn';
+        forceBtn.textContent = 'FORCE TEST';
+        forceBtn.style.cssText = 'margin-left:4px;background:#5a1f1f;color:#ffb;border:1px solid #f5a623;font-size:10px';
+        testBtn.parentNode.insertBefore(forceBtn, testBtn.nextSibling);
+        forceBtn.onclick = forceTestAlert;
+      }
+    }
+  }
+
+  // ── FORCE TEST ALERT ────────────────────────────────
+  function forceTestAlert() {
+    const targetCorridor = 'I-65';
+    const allCams = inferCameras(targetCorridor, LIVE_CAMERAS, FALLBACK_CAMERAS);
+    const cams = allCams.slice(0, 8);
+
+    const fake = {
+      id: 999000 + Math.floor(Math.random() * 1000),
+      type: 'amber',
+      state: 'IN',
+      subject: 'TEST ALERT — synthetic, not a real ISP alert',
+      vehicle: 'Silver Honda Civic',
+      plate: 'TEST123',
+      ps: 'IN',
+      lastSeen: 'Indianapolis, IN (test)',
+      dir: 'Northbound',
+      suspect: '',
+      issued: new Date().toLocaleString('en-US', {
+        timeZone: 'America/Indiana/Indianapolis',
+        hour12: false, month: '2-digit', day: '2-digit',
+        hour: '2-digit', minute: '2-digit',
+      }),
+      elapsed: '0m',
+      corridor: targetCorridor,
+      isReal: false,
+      lat: 39.78, lon: -86.15,
+      cams: cams,
+    };
+
+    ALERTS = [fake, ...ALERTS.filter(a => !String(a.id).startsWith('999'))];
+    updatePills();
+    renderAlerts();
+    rebuildAlertMarkers();
+
+    const sl = document.getElementById('scan-log-sheet');
+    if (sl) sl.classList.add('on');
+
+    logScan(`⬤⬤⬤ FORCE TEST ALERT injected`, 'flagged');
+    logScan(`  ↳ corridor: ${targetCorridor}, scanning ${cams.length} cameras`, 'info');
+    logScan(`  ↳ target: ${fake.vehicle} ${fake.plate}`, 'info');
+    logScan(`  ↳ alert id: ${fake.id} (synthetic)`, 'info');
+
+    startScanningForAlerts(ALERTS);
+    openAlertSheet(fake);
   }
 
   function dismissIntro() {
     const overlay = document.getElementById('intro-overlay');
+    if (!overlay) return;
     overlay.style.opacity = '0';
     overlay.style.transition = 'opacity .3s ease';
     setTimeout(() => overlay.style.display = 'none', 300);
@@ -107,7 +208,8 @@
         t.classList.add('on');
         const v = t.dataset.v;
         document.querySelectorAll('.view').forEach(view => view.classList.remove('on'));
-        document.getElementById('view-' + v).classList.add('on');
+        const target = document.getElementById('view-' + v);
+        if (target) target.classList.add('on');
         if (v === 'map' && map) setTimeout(() => map.invalidateSize(), 150);
       });
     });
@@ -118,39 +220,52 @@
     document.querySelectorAll('[data-close]').forEach(el => {
       el.addEventListener('click', () => {
         const id = el.dataset.close;
-        document.getElementById(id).classList.remove('on');
+        const target = document.getElementById(id);
+        if (target) target.classList.remove('on');
       });
     });
   }
 
   // ── REVIEW QUEUE ─────────────────────────────────────
   function bindReviewQueue() {
+    if (!window.FlagQueue) { console.warn('[corridor] FlagQueue module missing'); return; }
     window.FlagQueue.setOnChange(updateQueuePill);
-    document.getElementById('btn-close-review').onclick = () => document.getElementById('review-sheet').classList.remove('on');
-    document.getElementById('btn-clear-queue').onclick  = () => { window.FlagQueue.clear(); renderReviewGrid(); };
-    document.getElementById('btn-download-all').onclick = () => window.FlagQueue.downloadAll();
+    const bind = (id, handler) => {
+      const el = document.getElementById(id);
+      if (el) el.onclick = handler;
+    };
+    bind('btn-close-review', () => { const s = document.getElementById('review-sheet'); if (s) s.classList.remove('on'); });
+    bind('btn-clear-queue',  () => { window.FlagQueue.clear(); renderReviewGrid(); });
+    bind('btn-download-all', () => window.FlagQueue.downloadAll());
     updateQueuePill(window.FlagQueue.snapshot());
   }
 
   function updateQueuePill(snap) {
     const pill = document.getElementById('queue-pill');
-    pill.textContent = snap.pending + ' PENDING';
-    pill.classList.toggle('zero', snap.pending === 0);
-    document.getElementById('scan-count').textContent  = flagCount + ' FLAGGED';
-    document.getElementById('scan-count2').textContent = flagCount + ' FLAGGED';
-    if (document.getElementById('review-sheet').classList.contains('on')) renderReviewGrid();
+    if (pill) {
+      pill.textContent = snap.pending + ' PENDING';
+      pill.classList.toggle('zero', snap.pending === 0);
+    }
+    const sc1 = document.getElementById('scan-count');  if (sc1) sc1.textContent = flagCount + ' FLAGGED';
+    const sc2 = document.getElementById('scan-count2'); if (sc2) sc2.textContent = flagCount + ' FLAGGED';
+    const sheet = document.getElementById('review-sheet');
+    if (sheet && sheet.classList.contains('on')) renderReviewGrid();
   }
 
   function openReviewQueue() {
+    if (!window.FlagQueue) return;
     if (window.FlagQueue.snapshot().pending === 0 && window.FlagQueue.snapshot().total === 0) return;
     renderReviewGrid();
-    document.getElementById('review-sheet').classList.add('on');
+    const sheet = document.getElementById('review-sheet');
+    if (sheet) sheet.classList.add('on');
   }
 
   function renderReviewGrid() {
     const all = window.FlagQueue.getAll();
-    document.getElementById('review-count').textContent = all.length;
+    const ct = document.getElementById('review-count');
+    if (ct) ct.textContent = all.length;
     const grid = document.getElementById('review-grid');
+    if (!grid) return;
     if (!all.length) {
       grid.innerHTML = '<div class="review-empty">No flagged frames yet.<br>Flags appear here when scanner detects vehicles matching active alerts.</div>';
       return;
@@ -186,6 +301,7 @@
   // ── CAMERA FILTER ────────────────────────────────────
   function bindCamFilter() {
     const input = document.getElementById('cam-filter');
+    if (!input) return;
     input.addEventListener('input', () => {
       camFilter = input.value.toLowerCase();
       renderCamGrid();
@@ -196,8 +312,8 @@
   function initClock() {
     function tick() {
       const t = new Date().toLocaleTimeString('en-US', {hour12:false, hour:'2-digit', minute:'2-digit', timeZone:'America/Indiana/Indianapolis'});
-      document.getElementById('clock').textContent = t;
-      document.getElementById('last-sync').textContent = t;
+      const c = document.getElementById('clock');     if (c) c.textContent = t;
+      const ls = document.getElementById('last-sync'); if (ls) ls.textContent = t;
     }
     tick();
     setInterval(tick, 30000);
@@ -205,18 +321,22 @@
 
   // ── MAP ──────────────────────────────────────────────
   function initMap() {
+    if (typeof L === 'undefined') {
+      console.error('[corridor] Leaflet (L) not loaded — map disabled');
+      return;
+    }
     map = L.map('map', {center:[39.9,-86.1], zoom:7, zoomControl:true, attributionControl:false});
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '&copy; OpenStreetMap',
       crossOrigin: true,
     }).addTo(map);
     L.control.attribution({prefix: false}).addTo(map);
-    // Register zoom listener ONCE
     map.on('zoomend', updateCamDotVisibility);
     plotFallbackCameras();
   }
 
   function plotFallbackCameras() {
+    if (!map) return;
     FALLBACK_CAMERAS.forEach(cam => {
       const el = document.createElement('div');
       el.className = 'cam-dot';
@@ -238,6 +358,7 @@
   }
 
   function addCameraMarker(cam, coords) {
+    if (!map) return;
     const el = document.createElement('div');
     el.className = 'cam-dot';
     const mk = L.marker([coords.lat, coords.lon], {
@@ -253,7 +374,9 @@
       const json = await res.json();
       if (!json.cameras || !json.cameras.length) return;
       LIVE_CAMERAS = json.cameras;
-      Object.values(camMarkers).forEach(({mk}) => map.removeLayer(mk));
+      if (map) {
+        Object.values(camMarkers).forEach(({mk}) => map.removeLayer(mk));
+      }
       camMarkers = {};
       routeIndexes = {};
       let placed = 0;
@@ -264,7 +387,8 @@
       });
       updateCamDotVisibility();
       renderCamGrid();
-      document.getElementById('feed-status').textContent = 'LIVE — ' + json.total + ' CAMS';
+      const fs = document.getElementById('feed-status');
+      if (fs) fs.textContent = 'LIVE — ' + json.total + ' CAMS';
     } catch(e) { console.warn('camera index load failed:', e); }
   }
 
@@ -287,9 +411,10 @@
     }).slice(0, 200);
 
     const grid = document.getElementById('cam-grid');
+    if (!grid) return;
     grid.innerHTML = filtered.map(cam => `
       <div class="cam-thumb" data-camid="${esc(cam.id)}">
-        <img data-src="/api/camproxy?id=${esc(cam.id)}" alt="" loading="lazy">
+        <img data-src="${esc(camThumbUrl(cam))}" alt="" loading="lazy">
         <div class="cam-thumb-lbl">${esc(cam.title || cam.id)}</div>
       </div>
     `).join('');
@@ -323,7 +448,8 @@
 
   // ── ALERTS ───────────────────────────────────────────
   async function fetchAllAlerts() {
-    document.getElementById('feed-status').textContent = 'SYNCING...';
+    const fs = document.getElementById('feed-status');
+    if (fs) fs.textContent = 'SYNCING...';
     const results = [];
     let id = 1;
     for (const type of ISP_SOURCES) {
@@ -346,17 +472,15 @@
     rebuildAlertMarkers();
 
     if (ALERTS.length) {
-      document.getElementById('feed-status').textContent = `GEOCODING 0/${ALERTS.length}...`;
+      if (fs) fs.textContent = `GEOCODING 0/${ALERTS.length}...`;
       geocodeAlerts(ALERTS, (done, total) => {
-        document.getElementById('feed-status').textContent = `GEOCODING ${done}/${total}...`;
+        if (fs) fs.textContent = `GEOCODING ${done}/${total}...`;
         rebuildAlertMarkers();
       }).then(() => {
-        document.getElementById('feed-status').textContent =
-          LIVE_CAMERAS.length ? 'LIVE — ' + LIVE_CAMERAS.length + ' CAMS' : 'LIVE';
+        if (fs) fs.textContent = LIVE_CAMERAS.length ? 'LIVE — ' + LIVE_CAMERAS.length + ' CAMS' : 'LIVE';
       });
     } else {
-      document.getElementById('feed-status').textContent =
-        LIVE_CAMERAS.length ? 'LIVE — ' + LIVE_CAMERAS.length + ' CAMS' : 'LIVE';
+      if (fs) fs.textContent = LIVE_CAMERAS.length ? 'LIVE — ' + LIVE_CAMERAS.length + ' CAMS' : 'LIVE';
     }
 
     if (ALERTS.length) startScanningForAlerts(ALERTS);
@@ -364,13 +488,15 @@
 
   function updatePills() {
     const c = t => ALERTS.filter(a => a.type === t).length;
-    document.getElementById('p-amber').textContent  = c('amber')  + ' AMB';
-    document.getElementById('p-silver').textContent = c('silver') + ' SIL';
-    document.getElementById('p-green').textContent  = c('green')  + ' GRN';
-    document.getElementById('p-blue').textContent   = c('blue')   + ' BLU';
+    const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+    set('p-amber',  c('amber')  + ' AMB');
+    set('p-silver', c('silver') + ' SIL');
+    set('p-green',  c('green')  + ' GRN');
+    set('p-blue',   c('blue')   + ' BLU');
   }
 
   function rebuildAlertMarkers() {
+    if (!map) return;
     Object.values(alertMarkers).forEach(mk => map.removeLayer(mk));
     alertMarkers = {};
     ALERTS.forEach(a => {
@@ -387,12 +513,14 @@
   }
 
   function renderAlerts() {
+    const list = document.getElementById('alert-list');
+    if (!list) return;
     if (!ALERTS.length) {
-      document.getElementById('alert-list').innerHTML =
+      list.innerHTML =
         `<div class="no-alerts"><span>◉ ALL CLEAR</span><br><br>No active alerts in Indiana.<br>Refreshes every 3 minutes.</div>`;
       return;
     }
-    document.getElementById('alert-list').innerHTML = ALERTS.map(a => `
+    list.innerHTML = ALERTS.map(a => `
       <div class="acard ${esc(a.type)}" data-id="${a.id}">
         <div class="abadge ab-${esc(a.type)}">${esc(a.type.toUpperCase())} — ${esc(a.state)}</div>
         <div class="aname">${esc(a.subject)}</div>
@@ -400,7 +528,7 @@
         <div class="aplate ${esc(a.type)}">${esc(a.plate)} · ${esc(a.ps)}</div>
         <div class="ameta"><span>${esc(a.corridor)}</span><span>${esc(a.dir)}</span></div>
       </div>`).join('');
-    document.getElementById('alert-list').onclick = e => {
+    list.onclick = e => {
       const card = e.target.closest('.acard');
       if (!card) return;
       const id = parseInt(card.dataset.id, 10);
@@ -412,7 +540,9 @@
   function openAlertSheet(a) {
     selAlert = a;
     const c = COLOR[a.type];
-    document.getElementById('alert-detail').innerHTML = `
+    const det = document.getElementById('alert-detail');
+    if (!det) return;
+    det.innerHTML = `
       <div class="dl">SUBJECT</div><div class="dv" style="font-size:14px;font-weight:700">${esc(a.subject)}</div>
       <div class="hr"></div>
       <div class="dl">VEHICLE</div><div class="dv">${esc(a.vehicle)}</div>
@@ -427,15 +557,19 @@
       <button class="btn accent" id="btn-view-cams" style="width:100%;padding:10px">VIEW CAMERAS ON ALERT CORRIDOR →</button>`;
     const btn = document.getElementById('btn-view-cams');
     if (btn) btn.onclick = () => viewAlertCams(a);
-    document.getElementById('alert-sheet').classList.add('on');
+    const sheet = document.getElementById('alert-sheet');
+    if (sheet) sheet.classList.add('on');
   }
 
   function viewAlertCams(a) {
-    document.getElementById('alert-sheet').classList.remove('on');
+    const sheet = document.getElementById('alert-sheet');
+    if (sheet) sheet.classList.remove('on');
     document.querySelectorAll('.tab').forEach(x => x.classList.remove('on'));
-    document.querySelector('.tab[data-v="cams"]').classList.add('on');
+    const camsTab = document.querySelector('.tab[data-v="cams"]');
+    if (camsTab) camsTab.classList.add('on');
     document.querySelectorAll('.view').forEach(v => v.classList.remove('on'));
-    document.getElementById('view-cams').classList.add('on');
+    const camsView = document.getElementById('view-cams');
+    if (camsView) camsView.classList.add('on');
     if (a.cams.length) {
       const firstId = a.cams[0];
       const liveCam = LIVE_CAMERAS.find(c => c.id === firstId);
@@ -451,17 +585,19 @@
     if (hlsInstance) { hlsInstance.destroy(); hlsInstance = null; }
     const img = document.getElementById('cam-img');
     const ph  = document.getElementById('cam-ph');
-    document.getElementById('cam-viewport').style.display = 'block';
-    document.getElementById('cam-info').style.display = 'block';
+    if (!img || !ph) return;
+    const vp = document.getElementById('cam-viewport');   if (vp) vp.style.display = 'block';
+    const ci = document.getElementById('cam-info');       if (ci) ci.style.display = 'block';
     ph.textContent = 'LOADING...';
     img.style.display = 'none';
     ph.style.display  = 'flex';
     const tmp = new Image();
-    tmp.onload  = () => { img.src=tmp.src; img.style.display='block'; ph.style.display='none'; document.getElementById('cam-live').style.display='inline'; stampTime(); };
+    tmp.crossOrigin = 'anonymous';
+    tmp.onload  = () => { img.src=tmp.src; img.style.display='block'; ph.style.display='none'; const lt = document.getElementById('cam-live'); if (lt) lt.style.display='inline'; stampTime(); };
     tmp.onerror = () => { ph.innerHTML=`<span style="font-size:9px;color:var(--dim);text-align:center">FEED UNAVAILABLE<br><span style="color:var(--text)">${esc(cam.label)}</span></span>`; };
     tmp.src = CAM(cam.img);
-    document.getElementById('cam-lbl').textContent = cam.label;
-    document.getElementById('cam-sub').textContent = cam.route;
+    const lbl = document.getElementById('cam-lbl'); if (lbl) lbl.textContent = cam.label;
+    const sub = document.getElementById('cam-sub'); if (sub) sub.textContent = cam.route;
   }
 
   // ── CAMERA — LIVE HLS ────────────────────────────────
@@ -472,14 +608,15 @@
     const img     = document.getElementById('cam-img');
     const ph      = document.getElementById('cam-ph');
     const liveTag = document.getElementById('cam-live');
-    document.getElementById('cam-viewport').style.display = 'block';
-    document.getElementById('cam-info').style.display = 'block';
+    if (!img || !ph) return;
+    const vp = document.getElementById('cam-viewport');   if (vp) vp.style.display = 'block';
+    const ci = document.getElementById('cam-info');       if (ci) ci.style.display = 'block';
     ph.textContent       = 'LOADING STREAM...';
     img.style.display    = 'none';
     ph.style.display     = 'flex';
-    liveTag.style.display = 'none';
-    document.getElementById('cam-lbl').textContent = cam.title || cam.id;
-    document.getElementById('cam-sub').textContent = cam.route || '';
+    if (liveTag) liveTag.style.display = 'none';
+    const lbl = document.getElementById('cam-lbl'); if (lbl) lbl.textContent = cam.title || cam.id;
+    const sub = document.getElementById('cam-sub'); if (sub) sub.textContent = cam.route || '';
 
     if (cam.streamUrl && typeof Hls !== 'undefined' && Hls.isSupported()) {
       let videoEl = document.getElementById('cam-video');
@@ -488,7 +625,8 @@
         videoEl.id = 'cam-video';
         videoEl.style.cssText = 'width:100%;height:100%;object-fit:cover;display:none;background:#000;position:absolute;top:0;left:0';
         videoEl.muted = true; videoEl.autoplay = true; videoEl.playsInline = true;
-        document.getElementById('cam-viewport').appendChild(videoEl);
+        const vp2 = document.getElementById('cam-viewport');
+        if (vp2) vp2.appendChild(videoEl);
       }
       const proxiedUrl = '/api/streamproxy?url=' + encodeURIComponent(cam.streamUrl);
       hlsInstance = new Hls({ enableWorker: true, lowLatencyMode: true });
@@ -499,8 +637,7 @@
         videoEl.style.display = 'block';
         img.style.display = 'none';
         ph.style.display = 'none';
-        liveTag.style.display = 'inline';
-        liveTag.textContent = '⬤ LIVE VIDEO';
+        if (liveTag) { liveTag.style.display = 'inline'; liveTag.textContent = '⬤ LIVE VIDEO'; }
         stampTime();
       });
       hlsInstance.on(Hls.Events.ERROR, (e, d) => {
@@ -513,15 +650,20 @@
 
   function loadStillFromLive(cam, img, ph, liveTag) {
     const tmp = new Image();
-    tmp.onload  = () => { img.src=tmp.src; img.style.display='block'; ph.style.display='none'; liveTag.style.display='inline'; liveTag.textContent='⬤ LIVE'; stampTime(); };
+    tmp.crossOrigin = 'anonymous';
+    tmp.onload  = () => { img.src=tmp.src; img.style.display='block'; ph.style.display='none'; if(liveTag){liveTag.style.display='inline'; liveTag.textContent='⬤ LIVE';} stampTime(); };
     tmp.onerror = () => { ph.innerHTML=`<span style="font-size:9px;color:var(--dim);text-align:center">FEED UNAVAILABLE<br><span style="color:var(--text)">${esc(cam.title||cam.id)}</span></span>`; };
-    // Always proxy — direct CARS URLs taint the canvas
-    tmp.src = '/api/camproxy?id=' + encodeURIComponent(cam.id) + '&t=' + Date.now();
+    // Always proxy. Use ?url= when imageUrl present (modern path), ?id= for legacy fallback.
+    const proxied = cam.imageUrl
+      ? '/api/camproxy?url=' + encodeURIComponent(cam.imageUrl) + '&t=' + Date.now()
+      : '/api/camproxy?id='  + encodeURIComponent(cam.id)       + '&t=' + Date.now();
+    tmp.src = proxied;
   }
 
   function stampTime() {
     const t = new Date().toLocaleTimeString('en-US', {hour12:false, hour:'2-digit', minute:'2-digit', second:'2-digit'});
-    document.getElementById('cam-ts').textContent = t + ' ET';
+    const ts = document.getElementById('cam-ts');
+    if (ts) ts.textContent = t + ' ET';
   }
 
   function refreshCam() {
@@ -531,7 +673,7 @@
   }
 
   function openFeed() {
-    if (selCam?.imageUrl) window.open(selCam.imageUrl, '_blank');
+    if (selCam?.imageUrl) window.open('/api/camproxy?url=' + encodeURIComponent(selCam.imageUrl), '_blank');
     else if (selCam?.img) window.open(CAM(selCam.img), '_blank');
     else if (selCam?.id)  window.open('/api/camproxy?id=' + encodeURIComponent(selCam.id), '_blank');
   }
@@ -541,7 +683,8 @@
     Object.values(scanIntervals).forEach(i => clearInterval(i));
     scanIntervals = {};
     if (!alerts.length) return;
-    document.getElementById('scan-bar').style.display = 'flex';
+    const sb = document.getElementById('scan-bar');
+    if (sb) sb.style.display = 'flex';
     alerts.forEach(alert => {
       logScan(`SCAN STARTED — ${alert.type.toUpperCase()} — ${alert.subject}`, 'info');
       logScan(`TARGET: ${alert.vehicle} · ${alert.plate}`, 'info');
@@ -585,8 +728,8 @@
 
     if (result.flagged) {
       flagCount++;
-      document.getElementById('scan-count').textContent  = flagCount + ' FLAGGED';
-      document.getElementById('scan-count2').textContent = flagCount + ' FLAGGED';
+      const sc1 = document.getElementById('scan-count');  if (sc1) sc1.textContent = flagCount + ' FLAGGED';
+      const sc2 = document.getElementById('scan-count2'); if (sc2) sc2.textContent = flagCount + ' FLAGGED';
       logScan(`⬤ FLAGGED — ${cam.title || cam.label} @ ${ts} — ${result.reason}`, 'flagged');
       const offerResult = window.FlagQueue.offer(frame.canvas, {
         alert, cam, ts: new Date().toISOString(), reason: result.reason, detail: result.detail,
@@ -613,8 +756,10 @@
       lastSeen:'TEST LOCATION', dir:'Northbound',
       corridor:cam.route, cams:[cam.id], isReal:false,
     };
-    document.getElementById('scan-bar').style.display = 'flex';
-    document.getElementById('scan-log-sheet').classList.add('on');
+    const sb = document.getElementById('scan-bar');
+    if (sb) sb.style.display = 'flex';
+    const sl = document.getElementById('scan-log-sheet');
+    if (sl) sl.classList.add('on');
     logScan(`⬤ TEST SCAN — ${cam.title}`, 'info');
     try {
       const f1 = await loadFrameAsImageData(cam);
@@ -630,8 +775,8 @@
       logScan(`  ↳ motion blobs: ${result.blobs.length}`, 'info');
       if (result.flagged) {
         flagCount++;
-        document.getElementById('scan-count').textContent  = flagCount + ' FLAGGED';
-        document.getElementById('scan-count2').textContent = flagCount + ' FLAGGED';
+        const sc1 = document.getElementById('scan-count');  if (sc1) sc1.textContent = flagCount + ' FLAGGED';
+        const sc2 = document.getElementById('scan-count2'); if (sc2) sc2.textContent = flagCount + ' FLAGGED';
         logScan(`⬤ TEST FLAGGED — ${result.reason}`, 'flagged');
         window.FlagQueue.offer(f2.canvas, {
           alert: fakeAlert, cam, ts: new Date().toISOString(),
